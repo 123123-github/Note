@@ -5,14 +5,14 @@
     - [mycat.c](#mycat.c)
     - [mycp.c](#mycp.c)
 - [多进程题目](#多进程题目)
-	- [mysys.c](#mysys.c)
-	- [sh1.c](#sh1.c)
-	- [sh2.c](#sh2.c)
-	- [sh3.c](#sh3.c)
+	- [mysys.c](#mysysc)
+	- [sh1.c](#sh1c)
+	- [sh2.c](#sh2c)
+	- [sh3.c](#sh3c)
 - [多线程题目](#多线程题目)
-	- [pi1.c](#pi1.c)
-	- [pi2.c](#pi2.c)
-	- [sort.c](#sort.c)
+	- [pi1.c](#pi1c)
+	- [pi2.c](#pi2c)
+	- [sort.c](#sortc)
 
 ## 文件读写编程题目
 
