@@ -1,9 +1,9 @@
 # 操作系统实验报告
 
 - [文件读写编程题目](#文件读写编程题目)
-    - [myecho.c](#myecho.c)
-    - [mycat.c](#mycat.c)
-    - [mycp.c](#mycp.c)
+    - [myecho.c](#myechoc)
+    - [mycat.c](#mycatc)
+    - [mycp.c](#mycpc)
 - [多进程题目](#多进程题目)
 	- [mysys.c](#mysysc)
 	- [sh1.c](#sh1c)
