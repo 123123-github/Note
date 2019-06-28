@@ -13,6 +13,9 @@
 	- [pi1.c](#pi1c)
 	- [pi2.c](#pi2c)
 	- [sort.c](#sortc)
+	- [pc1.c](#pc1c)
+	- [pc2.c](#pc2c)
+	- [ring.c](#ringc)
 
 ## 文件读写编程题目
 
@@ -1145,29 +1148,580 @@ guest@box:~/practice/part3$
 
 #### 题目要求
 
+使用条件变量解决生产者、计算者、消费者问题
+
+- 系统中有3个线程：生产者、计算者、消费者
+- 系统中有2个容量为4的缓冲区：buffer1、buffer2
+- 生产者生产'a'、'b'、'c'、‘d'、'e'、'f'、'g'、'h'八个字符，放入到buffer1
+- 计算者从buffer1取出字符，将小写字符转换为大写字符，放入到buffer2
+- 消费者从buffer2取出字符，将其打印到屏幕上
+
 #### 实现思路
+
+和生产者消费者问题很类似，相当于两个生产者消费者问题
+1. buf1中：生产者，计算者 -> 生产者，消费者
+2. buf2中：计算者，消费者 -> 生产者，消费者
+
+可见，计算者在 buf1 中充当消费者，在 buf2 中充当生产者；
+这样，可直接参考生产者消费者的工作流程，只是多一个缓冲区而已。
 
 #### 源代码
 
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <pthread.h>
+
+// buffer
+#define CAPCITY 5
+#define ITEM_COUNT 8
+struct Buffer {
+    int buf[CAPCITY];
+    int in, out;
+} buffer[2];
+
+int is_empty(struct Buffer* b)
+{
+    return b->in == b->out;
+}
+
+int is_full(struct Buffer* b)
+{
+    return (b->in + 1) % CAPCITY == b->out;
+}
+
+void put_item(struct Buffer* b, int v)
+{
+    b->buf[b->in] = v;
+    b->in = (b->in + 1) % CAPCITY;
+}
+
+int get_item(struct Buffer* b)
+{
+    int value = b->buf[b->out];
+    b->out = (b->out + 1) % CAPCITY;
+    return value;
+}
+
+// --------------------
+pthread_mutex_t mutex[2];
+pthread_cond_t wait_empty[2];
+pthread_cond_t wait_full[2];
+
+// --------------------
+void *consumer(void *arg)
+{
+    int i;
+    for (i = 0; i < ITEM_COUNT; i++) {
+        pthread_mutex_lock(&mutex[1]);
+        while (is_empty(&buffer[1])) {
+            pthread_cond_wait(&wait_full[1], &mutex[1]);
+        }
+
+        int v = get_item(&buffer[1]);
+        printf("consumer: %c\n", (char)v);
+
+        pthread_mutex_unlock(&mutex[1]);
+        pthread_cond_signal(&wait_empty[1]);
+    }
+
+    return NULL;
+}
+
+void *calculator(void *arg)
+{
+    int v;
+    int i;
+    for (i = 0; i < ITEM_COUNT; i++) {
+        pthread_mutex_lock(&mutex[0]);
+        while (is_empty(&buffer[0])) {
+            pthread_cond_wait(&wait_full[0], &mutex[0]);
+        }
+        v = get_item(&buffer[0]);
+        printf("cal_get: %c\n", (char)v);
+        pthread_mutex_unlock(&mutex[0]);
+        pthread_cond_signal(&wait_empty[0]);
+
+        v = v - 'a' + 'A';
+
+        pthread_mutex_lock(&mutex[1]);
+        while (is_full(&buffer[1])) {
+            pthread_cond_wait(&wait_empty[1], &mutex[1]);
+        }
+        put_item(&buffer[1], v);
+        printf("cal_put: %c\n", (char)v);
+        pthread_mutex_unlock(&mutex[1]);
+        pthread_cond_signal(&wait_full[1]);
+    }
+
+    return NULL;
+}
+
+void *producer(void *arg)
+{
+    int i;
+    for (i = 'a'; i <= 'h'; i++) {
+        pthread_mutex_lock(&mutex[0]);
+        while (is_full(&buffer[0])) {
+            pthread_cond_wait(&wait_empty[0], &mutex[0]);
+        }
+
+        put_item(&buffer[0], i);
+        printf("procdure: %c\n", (char)i);
+
+        pthread_mutex_unlock(&mutex[0]);
+        pthread_cond_signal(&wait_full[0]);
+    }
+
+    return NULL;
+}
+
+
+int main()
+{
+    pthread_mutex_init(&mutex[0], NULL);
+    pthread_mutex_init(&mutex[1], NULL);
+    pthread_cond_init(&wait_empty[0], NULL);
+    pthread_cond_init(&wait_empty[1], NULL);
+    pthread_cond_init(&wait_full[0], NULL);
+    pthread_cond_init(&wait_full[1], NULL);
+
+    pthread_t worker[3];
+    pthread_create(&worker[0], NULL, producer, NULL);
+    pthread_create(&worker[1], NULL, calculator, NULL);
+    pthread_create(&worker[2], NULL, consumer, NULL);
+
+    int i;
+    for (i = 0; i < 3; i++) {
+        pthread_join(worker[i], NULL);
+    }
+
+
+    return 0;
+}
+```
+
 #### 运行结果
+
+```sh
+guest@box:~/practice/part3$ cc pc1.c -lpthread
+guest@box:~/practice/part3$ ./a.out
+procdure: a
+procdure: b
+procdure: c
+procdure: d
+cal_get: a
+cal_put: A
+cal_get: b
+consumer: A
+cal_put: B
+cal_get: c
+consumer: B
+cal_put: C
+cal_get: d
+consumer: C
+cal_put: D
+consumer: D
+procdure: e
+procdure: f
+procdure: g
+procdure: h
+cal_get: e
+cal_put: E
+cal_get: f
+consumer: E
+cal_put: F
+cal_get: g
+consumer: F
+cal_put: G
+cal_get: h
+consumer: G
+cal_put: H
+consumer: H
+```
 
 ### pc2.c
 
 #### 题目要求
 
+使用信号量解决生产者、计算者、消费者问题
+
+- 功能和前面的实验相同，使用信号量解决
+
 #### 实现思路
+
+使用信号量和 pc1 类似，大体流程一致，只是访问临界资源的过程稍有不同
+在 pc2 中，访问临界资源过程
+1. 通过信号量判断缓冲区中的可用资源数（空/不空？）决定是否阻塞当前进程
+2. 当决定访问该缓冲区后，还需加锁解锁。锁使用初值为 1 的信号量来实现，
 
 #### 源代码
 
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <pthread.h>// buffer#define CAPCITY 4#define ITEM_COUNT 8
+
+struct Buffer {
+    int buf[CAPCITY];
+    int in, out;
+} buffer[2];
+
+int is_empty(struct Buffer* b)
+{
+    return b->in == b->out;
+}
+
+int is_full(struct Buffer* b)
+{
+    return (b->in + 1) % CAPCITY == b->out;
+}
+
+void put_item(struct Buffer* b, int v)
+{
+    b->buf[b->in] = v;
+    b->in = (b->in + 1) % CAPCITY;
+}
+
+int get_item(struct Buffer* b)
+{
+    int value = b->buf[b->out];
+    b->out = (b->out + 1) % CAPCITY;
+    return value;
+}
+
+// --------------------
+typedef struct {
+    int value;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} sema_t;
+
+void sema_init(sema_t *sema, int value)
+{
+    sema->value = value;
+    pthread_mutex_init(&sema->mutex, NULL);
+    pthread_cond_init(&sema->cond, NULL);
+}
+
+void sema_wait(sema_t *sema)
+{
+    pthread_mutex_lock(&sema->mutex);
+    while (sema->value <= 0)
+        pthread_cond_wait(&sema->cond, &sema->mutex);
+    sema->value--;
+    pthread_mutex_unlock(&sema->mutex);
+}
+
+void sema_signal(sema_t *sema)
+{
+    pthread_mutex_lock(&sema->mutex);
+    sema->value++;
+    pthread_cond_signal(&sema->cond);
+    pthread_mutex_unlock(&sema->mutex);
+}
+
+sema_t mutex_sema[2];
+sema_t wait_full_sema[2];
+sema_t wait_empty_sema[2];
+
+// --------------------
+void *consumer(void *arg)
+{
+    int i;
+    for (i = 0; i < ITEM_COUNT; i++) {
+        sema_wait(&wait_full_sema[1]);
+        sema_wait(&mutex_sema[1]);
+
+        int v = get_item(&buffer[1]);
+        printf("consumer: %c\n", (char)v);
+
+        sema_signal(&wait_empty_sema[1]);
+        sema_signal(&mutex_sema[1]);
+    }
+
+    return NULL;
+}
+
+void *calculator(void *arg)
+{
+    int v;
+    int i;
+    for (i = 0; i < ITEM_COUNT; i++) {
+        sema_wait(&wait_full_sema[0]);
+        sema_wait(&mutex_sema[0]);
+
+        v = get_item(&buffer[0]);
+        printf("cal_get: %c\n", (char)v);
+
+        sema_signal(&wait_empty_sema[0]);
+        sema_signal(&mutex_sema[0]);
+
+        v = v - 'a' + 'A';
+
+        sema_wait(&wait_empty_sema[1]);
+        sema_wait(&mutex_sema[1]);
+
+        put_item(&buffer[1], v);
+        printf("cal_put: %c\n", (char)v);
+
+        sema_signal(&mutex_sema[1]);
+        sema_signal(&wait_full_sema[1]);
+    }
+
+    return NULL;
+}
+
+void *producer(void *arg)
+{
+    int i;
+    for (i = 0; i < ITEM_COUNT; i++) {
+        int v = i + 'a';
+        sema_wait(&wait_empty_sema[0]);
+        sema_wait(&mutex_sema[0]);
+
+        put_item(&buffer[0], v);
+        printf("procdure: %c\n", (char)v);
+
+        sema_signal(&wait_full_sema[0]);
+        sema_signal(&mutex_sema[0]);
+
+    }
+
+    return NULL;
+}
+
+
+int main()
+{
+    sema_init(&mutex_sema[0], 1);
+    sema_init(&mutex_sema[1], 1);
+
+    sema_init(&wait_full_sema[0], 0);
+    sema_init(&wait_full_sema[1], 0);
+
+    sema_init(&wait_empty_sema[0], CAPCITY - 1);
+    sema_init(&wait_empty_sema[1], CAPCITY - 1);
+
+    pthread_t worker[3];
+    pthread_create(&worker[0], NULL, producer, NULL);
+    pthread_create(&worker[1], NULL, calculator, NULL);
+    pthread_create(&worker[2], NULL, consumer, NULL);
+
+    int i;
+    for (i = 0; i < 3; i++) {
+        pthread_join(worker[i], NULL);
+    }
+
+
+    return 0;
+}
+```
+
 #### 运行结果
+
+```sh
+guest@box:~/practice/part3$ cc pc2.c -lpthread
+guest@box:~/practice/part3$ ./a.out
+procdure: a
+procdure: b
+procdure: c
+cal_get: a
+cal_put: A
+cal_get: b
+cal_put: B
+cal_get: c
+cal_put: C
+consumer: A
+consumer: B
+consumer: C
+procdure: d
+procdure: e
+procdure: f
+cal_get: d
+cal_put: D
+cal_get: e
+cal_put: E
+cal_get: f
+cal_put: F
+consumer: D
+consumer: E
+consumer: F
+procdure: g
+procdure: h
+cal_get: g
+cal_put: G
+cal_get: h
+cal_put: H
+consumer: G
+consumer: H
+guest@box:~/practice/part3
+```
 
 ### ring.c
 
 #### 题目要求
 
+创建N个线程，它们构成一个环
+
+- 创建N个线程：T1、T2、T3、… TN
+- T1向T2发送整数1
+- T2收到后将整数加1
+- T2向T3发送整数2
+- …
+- TN收到后将整数加1
+- TN向T1发送整数N
+
 #### 实现思路
+
+采用互斥量和信号量实现，每个线程的工作类似于pc1中计算者的工作。关键点在于启动线程。
+
+可采用初始化进程时向进程传递 id 号的方法来标识进程在ring中的位置。
+整体流程如下
+
+1. 初始化缓冲区，其中第一个位置 buf[0] 存 1， 其余为 0 （0表示空，非零表不空）
+2. 初始化互斥量和信号量
+3. 对每个线程，启动时向它传递一个 id 号用于标识该线程在 ring 中的位置
+4. 刚初始完时，只有 0 线程可运行，之后一个接一个运行
+5. 程序中设置一个终止值，线程将数据放入下一个缓冲区后，判断，若到达终止值则结束线程
+
+**注意**：
+向进程传递标识时不能使用一个 `int` 量，否则创建的线程 id 均为该变量最后一次赋得的值，可见线程创建并不是在调用create函数后便去执行
+比如下面的运行结果中，可以看到线程创建运行与实际运行顺序相反
 
 #### 源代码
 
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <pthread.h>
+
+// number of thread
+#define N 6
+#define STOP_NUMBER 12
+
+// buffer
+// buffer(i) -> worker(i) -> buffer(i+1) -> worker(i+1)
+int buffer[N];
+
+// mutex & cond
+pthread_mutex_t mutex[N];
+pthread_cond_t wait_full[N];
+pthread_cond_t wait_empty[N];
+
+// thread procedure
+void *ring_proc(void* arg)
+{
+    int id = *((int*)arg);
+    int next_id = (id + 1) % N;
+    int data;
+
+    printf("%d: hi~\n", id);
+    while (1) {
+        // get data
+        pthread_mutex_lock(&mutex[id]);
+        while (!buffer[id])
+            pthread_cond_wait(&wait_full[id], &mutex[id]);
+
+        data = buffer[id];
+        buffer[id] = 0;
+
+        pthread_cond_signal(&wait_empty[id]);
+        pthread_mutex_unlock(&mutex[id]);
+
+        // add
+        printf("proc_%d: get_data -> %d\n", id, data);
+        data = data + 1;
+
+        // put data
+        pthread_mutex_lock(&mutex[next_id]);
+        while (buffer[next_id])
+            pthread_cond_wait(&wait_empty[next_id], &mutex[next_id]);
+
+        printf("proc_%d: put_data -> %d\n", id, data);
+        buffer[next_id] = data;
+
+        pthread_cond_signal(&wait_full[next_id]);
+        pthread_mutex_unlock(&mutex[next_id]);
+
+        if (data >= STOP_NUMBER) break;
+    }
+
+    return NULL;
+}
+
+int main()
+{
+    int i;
+    // init mutex & cond
+    for (i = 0; i < N; i++) {
+        pthread_mutex_init(&mutex[i], NULL);
+        pthread_cond_init(&wait_full[i], NULL);
+        pthread_cond_init(&wait_empty[i], NULL);
+    }
+
+    buffer[0] = 1;
+    for (i = 1; i < N; i++) buffer[i] = 0;
+
+    // create procedure
+    int proc_id[N];
+    pthread_t workers[N];
+    for (i = 0; i < N; i++) {
+        // create thread & set thread param - id
+        proc_id[i] = i;
+        pthread_create(&workers[i], NULL, ring_proc, (void *)&proc_id[i]);
+    }
+
+    // join thread
+    for (i = 0; i < N; i++) {
+        pthread_join(workers[i], NULL);
+    }
+
+    return 0;
+}
+```
+
 #### 运行结果
 
+```sh
+guest@box:~/practice/part3$ ./a.out
+5: hi~
+4: hi~
+3: hi~
+2: hi~
+1: hi~
+0: hi~
+proc_0: get_data -> 1
+proc_0: put_data -> 2
+proc_1: get_data -> 2
+proc_1: put_data -> 3
+proc_2: get_data -> 3
+proc_2: put_data -> 4
+proc_3: get_data -> 4
+proc_3: put_data -> 5
+proc_4: get_data -> 5
+proc_4: put_data -> 6
+proc_5: get_data -> 6
+proc_5: put_data -> 7
+proc_0: get_data -> 7
+proc_0: put_data -> 8
+proc_1: get_data -> 8
+proc_1: put_data -> 9
+proc_2: get_data -> 9
+proc_2: put_data -> 10
+proc_3: get_data -> 10
+proc_3: put_data -> 11
+proc_4: get_data -> 11
+proc_4: put_data -> 12
+proc_5: get_data -> 12
+proc_5: put_data -> 13
+proc_0: get_data -> 13
+proc_0: put_data -> 14
+proc_1: get_data -> 14
+proc_1: put_data -> 15
+proc_2: get_data -> 15
+proc_2: put_data -> 16
+proc_3: get_data -> 16
+proc_3: put_data -> 17
+guest@box:~/practice/part3$ 
+```
